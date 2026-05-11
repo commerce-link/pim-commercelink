@@ -10,11 +10,27 @@
 
     <name>pim-commercelink</name>
 
+    <scm>
+        <connection>scm:git:https://github.com/commerce-link/${project.artifactId}.git</connection>
+        <developerConnection>scm:git:https://github.com/commerce-link/${project.artifactId}.git</developerConnection>
+        <url>https://github.com/commerce-link/${project.artifactId}</url>
+    </scm>
+
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/commerce-link/pim-api</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
 
     <dependencies>
         <dependency>
@@ -33,4 +49,11 @@
             <version>2.18.3</version>
         </dependency>
     </dependencies>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/commerce-link/${project.artifactId}</url>
+        </repository>
+    </distributionManagement>
 </project>
