@@ -1,5 +1,5 @@
 /target/
-
+/target_test-classes/
 ### IDE ###
 .idea
 *.iws
