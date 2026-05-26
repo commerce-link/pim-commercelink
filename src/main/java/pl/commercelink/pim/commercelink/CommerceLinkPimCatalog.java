@@ -21,14 +21,17 @@ import java.util.function.Consumer;
 import static pl.commercelink.taxonomy.UnifiedProductIdentifiers.unifyEan;
 import static pl.commercelink.taxonomy.UnifiedProductIdentifiers.unifyMfn;
 
-public class PimIndexCatalog implements PimCatalog {
+public class CommerceLinkPimCatalog implements PimCatalog {
 
     private static final String SUBMIT_QUEUE_NAME = "pim-fetch-queue";
+    private static final String INDEX_PATH = "/PIM/Index";
+    private static final String BRANDS_PATH = "/PIM/Brands";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SqsAsyncClient sqsAsyncClient;
     private final String pimIndexUrl;
+    private final String pimBrandsUrl;
     private final String apiKey;
     private final String submitQueueUrl;
     private final boolean prod;
@@ -41,16 +44,17 @@ public class PimIndexCatalog implements PimCatalog {
     private Map<String, PimEntry> mpnCache = new ConcurrentHashMap<>();
     private Map<String, BrandMapping> brandsCache = new ConcurrentHashMap<>();
 
-    public PimIndexCatalog(String pimIndexUrl, String apiKey, boolean prod) {
-        this(null, pimIndexUrl, apiKey, prod);
+    public CommerceLinkPimCatalog(String pimBaseUrl, String apiKey, boolean prod) {
+        this(null, pimBaseUrl, apiKey, prod);
     }
 
-    public PimIndexCatalog(SqsAsyncClient sqsAsyncClient, String pimIndexUrl, String apiKey, boolean prod) {
+    public CommerceLinkPimCatalog(SqsAsyncClient sqsAsyncClient, String pimBaseUrl, String apiKey, boolean prod) {
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.sqsAsyncClient = sqsAsyncClient;
-        this.pimIndexUrl = pimIndexUrl;
+        this.pimIndexUrl = pimBaseUrl + INDEX_PATH;
+        this.pimBrandsUrl = pimBaseUrl + BRANDS_PATH;
         this.apiKey = apiKey;
         this.submitQueueUrl = sqsAsyncClient != null
                 ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(SUBMIT_QUEUE_NAME).build()).join().queueUrl()
@@ -60,82 +64,69 @@ public class PimIndexCatalog implements PimCatalog {
 
     @Override
     public void refresh() {
-        List<PimEntry> entries = List.of();
+        List<PimEntry> entries = fetchJsonList(pimIndexUrl, new TypeReference<>() {}, "PIM index");
+        System.out.println("Loaded " + entries.size() + " PIM entries into cache from " + pimIndexUrl);
+        if (!entries.isEmpty()) {
+            updateIndexCaches(entries);
+        }
+
+        List<BrandMapping> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache");
+        if (!brands.isEmpty()) {
+            updateBrandsCache(brands);
+            System.out.println("Loaded " + brands.size() + " brand mappings from " + pimBrandsUrl);
+        }
+    }
+
+    private <T> List<T> fetchJsonList(String url, TypeReference<List<T>> type, String errorContext) {
         try {
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(pimIndexUrl))
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
                     .GET();
-
             if (apiKey != null && !apiKey.isBlank()) {
-                requestBuilder.header("x-api-key", apiKey);
+                builder.header("x-api-key", apiKey);
             }
-
-            HttpResponse<String> response = httpClient.send(requestBuilder.build(),
+            HttpResponse<String> response = httpClient.send(builder.build(),
                     HttpResponse.BodyHandlers.ofString());
-
             if (response.statusCode() == 200) {
-                entries = objectMapper.readValue(response.body(), new TypeReference<>() {});
+                return objectMapper.readValue(response.body(), type);
             }
+            return List.of();
         } catch (Exception e) {
             if (prod) {
-                throw new RuntimeException("Failed to refresh PIM cache from " + pimIndexUrl, e);
+                throw new RuntimeException("Failed to refresh " + errorContext + " from " + url, e);
             }
+            return List.of();
         }
+    }
 
-        System.out.println("Loaded " + (entries == null ? 0 : entries.size()) + " PIM entries into cache from " + pimIndexUrl);
-
-        if (entries != null && !entries.isEmpty()) {
-            Map<String, PimEntry> newPimIdCache = new ConcurrentHashMap<>();
-            Map<String, PimEntry> newGtinCache = new ConcurrentHashMap<>();
-            Map<String, PimEntry> newMpnCache = new ConcurrentHashMap<>();
-
-            for (PimEntry entry : entries) {
-                newPimIdCache.put(entry.pimId(), entry);
-                entry.identifiers().forEach(id -> {
-                    if (id.type() == PimIdentifierType.GTIN) {
-                        newGtinCache.put(id.value(), entry);
-                    } else if (id.type() == PimIdentifierType.MPN) {
-                        newMpnCache.put(id.value(), entry);
-                    }
-                });
-            }
-
-            synchronized (this) {
-                this.pimIdCache = newPimIdCache;
-                this.gtinCache = newGtinCache;
-                this.mpnCache = newMpnCache;
-            }
+    private void updateIndexCaches(List<PimEntry> entries) {
+        Map<String, PimEntry> newPimIdCache = new ConcurrentHashMap<>();
+        Map<String, PimEntry> newGtinCache = new ConcurrentHashMap<>();
+        Map<String, PimEntry> newMpnCache = new ConcurrentHashMap<>();
+        for (PimEntry entry : entries) {
+            newPimIdCache.put(entry.pimId(), entry);
+            entry.identifiers().forEach(id -> {
+                if (id.type() == PimIdentifierType.GTIN) {
+                    newGtinCache.put(id.value(), entry);
+                } else if (id.type() == PimIdentifierType.MPN) {
+                    newMpnCache.put(id.value(), entry);
+                }
+            });
         }
+        synchronized (this) {
+            this.pimIdCache = newPimIdCache;
+            this.gtinCache = newGtinCache;
+            this.mpnCache = newMpnCache;
+        }
+    }
 
-        try {
-            HttpRequest.Builder brandsRequestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(pimIndexUrl.replace("/PIM/Index", "/PIM/Brands")))
-                    .GET();
-
-            if (apiKey != null && !apiKey.isBlank()) {
-                brandsRequestBuilder.header("x-api-key", apiKey);
-            }
-
-            HttpResponse<String> brandsResponse = httpClient.send(brandsRequestBuilder.build(),
-                    HttpResponse.BodyHandlers.ofString());
-
-            if (brandsResponse.statusCode() == 200) {
-                List<BrandMapping> brands = objectMapper.readValue(brandsResponse.body(),
-                        new TypeReference<>() {});
-                Map<String, BrandMapping> newBrandsCache = new ConcurrentHashMap<>();
-                for (BrandMapping mapping : brands) {
-                    newBrandsCache.put(mapping.alias().toLowerCase(), mapping);
-                }
-                synchronized (this) {
-                    this.brandsCache = newBrandsCache;
-                }
-                System.out.println("Loaded " + brands.size() + " brand mappings from " +
-                        pimIndexUrl.replace("/PIM/Index", "/PIM/Brands"));
-            }
-        } catch (Exception e) {
-            if (prod) {
-                throw new RuntimeException("Failed to refresh brand cache", e);
-            }
+    private void updateBrandsCache(List<BrandMapping> brands) {
+        Map<String, BrandMapping> newBrandsCache = new ConcurrentHashMap<>();
+        for (BrandMapping mapping : brands) {
+            newBrandsCache.put(mapping.alias().toLowerCase(), mapping);
+        }
+        synchronized (this) {
+            this.brandsCache = newBrandsCache;
         }
     }
 
@@ -229,7 +220,6 @@ public class PimIndexCatalog implements PimCatalog {
         if (mapping != null) {
             return mapping.strength();
         }
-        // try canonical lookup (if input was already canonical)
         for (BrandMapping m : brandsCache.values()) {
             if (m.canonicalName().equalsIgnoreCase(brand)) {
                 return m.strength();
