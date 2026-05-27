@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.commercelink.pim.api.*;
-import pl.commercelink.pim.api.BrandMapping;
+import pl.commercelink.pim.api.Brand;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
@@ -42,7 +42,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private Map<String, PimEntry> pimIdCache = new ConcurrentHashMap<>();
     private Map<String, PimEntry> gtinCache = new ConcurrentHashMap<>();
     private Map<String, PimEntry> mpnCache = new ConcurrentHashMap<>();
-    private Map<String, BrandMapping> brandsCache = new ConcurrentHashMap<>();
+    private volatile List<Brand> brandsCache = List.of();
 
     public CommerceLinkPimCatalog(String pimBaseUrl, String apiKey, boolean prod) {
         this(null, pimBaseUrl, apiKey, prod);
@@ -70,7 +70,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
             updateIndexCaches(entries);
         }
 
-        List<BrandMapping> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache");
+        List<Brand> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache");
         if (!brands.isEmpty()) {
             updateBrandsCache(brands);
             System.out.println("Loaded " + brands.size() + " brand mappings from " + pimBrandsUrl);
@@ -120,14 +120,8 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         }
     }
 
-    private void updateBrandsCache(List<BrandMapping> brands) {
-        Map<String, BrandMapping> newBrandsCache = new ConcurrentHashMap<>();
-        for (BrandMapping mapping : brands) {
-            newBrandsCache.put(mapping.alias().toLowerCase(), mapping);
-        }
-        synchronized (this) {
-            this.brandsCache = newBrandsCache;
-        }
+    private void updateBrandsCache(List<Brand> brands) {
+        this.brandsCache = List.copyOf(brands);
     }
 
     @Override
@@ -203,28 +197,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     }
 
     @Override
-    public String unifyBrand(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        BrandMapping mapping = brandsCache.get(raw.toLowerCase());
-        return mapping != null ? mapping.canonicalName() : raw;
-    }
-
-    @Override
-    public int brandStrength(String brand) {
-        if (brand == null) {
-            return 1;
-        }
-        BrandMapping mapping = brandsCache.get(brand.toLowerCase());
-        if (mapping != null) {
-            return mapping.strength();
-        }
-        for (BrandMapping m : brandsCache.values()) {
-            if (m.canonicalName().equalsIgnoreCase(brand)) {
-                return m.strength();
-            }
-        }
-        return 1;
+    public List<Brand> allBrands() {
+        return brandsCache;
     }
 }
