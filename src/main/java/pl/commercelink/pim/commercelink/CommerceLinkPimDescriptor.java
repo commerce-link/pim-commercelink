@@ -32,8 +32,8 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
 
     @Override
     public PimCatalog create(Map<String, String> configuration) {
-        return new PimIndexCatalog(
-                configuration.getOrDefault("apiDomain", "") + "/PIM/Index",
+        return new CommerceLinkPimCatalog(
+                configuration.getOrDefault("apiDomain", ""),
                 configuration.getOrDefault("apiKey", ""),
                 "prod".equals(configuration.getOrDefault("env", "localhost"))
         );
@@ -42,9 +42,9 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
     @Override
     public PimCatalog create(Map<String, String> configuration, Map<String, Object> context) {
         SqsAsyncClient sqsAsyncClient = (SqsAsyncClient) context.get("sqsAsyncClient");
-        return new PimIndexCatalog(
+        return new CommerceLinkPimCatalog(
                 sqsAsyncClient,
-                configuration.getOrDefault("apiDomain", "") + "/PIM/Index",
+                configuration.getOrDefault("apiDomain", ""),
                 configuration.getOrDefault("apiKey", ""),
                 "prod".equals(configuration.getOrDefault("env", "localhost"))
         );
