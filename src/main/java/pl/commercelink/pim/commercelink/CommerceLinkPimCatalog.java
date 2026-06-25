@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.commercelink.pim.api.*;
 import pl.commercelink.pim.api.Brand;
+import pl.commercelink.pim.api.Category;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
@@ -26,12 +27,14 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private static final String SUBMIT_QUEUE_NAME = "pim-fetch-queue";
     private static final String INDEX_PATH = "/PIM/Index";
     private static final String BRANDS_PATH = "/PIM/Brands";
+    private static final String CATEGORIES_PATH = "/PIM/Categories";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SqsAsyncClient sqsAsyncClient;
     private final String pimIndexUrl;
     private final String pimBrandsUrl;
+    private final String pimCategoriesUrl;
     private final String apiKey;
     private final String submitQueueUrl;
     private final boolean prod;
@@ -43,6 +46,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private Map<String, PimEntry> gtinCache = new ConcurrentHashMap<>();
     private Map<String, PimEntry> mpnCache = new ConcurrentHashMap<>();
     private volatile List<Brand> brandsCache = List.of();
+    private volatile List<Category> categoriesCache = List.of();
 
     public CommerceLinkPimCatalog(String pimBaseUrl, String apiKey, boolean prod) {
         this(null, pimBaseUrl, apiKey, prod);
@@ -55,6 +59,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         this.sqsAsyncClient = sqsAsyncClient;
         this.pimIndexUrl = pimBaseUrl + INDEX_PATH;
         this.pimBrandsUrl = pimBaseUrl + BRANDS_PATH;
+        this.pimCategoriesUrl = pimBaseUrl + CATEGORIES_PATH;
         this.apiKey = apiKey;
         this.submitQueueUrl = sqsAsyncClient != null
                 ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(SUBMIT_QUEUE_NAME).build()).join().queueUrl()
@@ -74,6 +79,12 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         if (!brands.isEmpty()) {
             updateBrandsCache(brands);
             System.out.println("Loaded " + brands.size() + " brand mappings from " + pimBrandsUrl);
+        }
+
+        List<Category> categories = fetchJsonList(pimCategoriesUrl, new TypeReference<>() {}, "category cache");
+        if (!categories.isEmpty()) {
+            updateCategoriesCache(categories);
+            System.out.println("Loaded " + categories.size() + " category mappings from " + pimCategoriesUrl);
         }
     }
 
@@ -122,6 +133,10 @@ public class CommerceLinkPimCatalog implements PimCatalog {
 
     private void updateBrandsCache(List<Brand> brands) {
         this.brandsCache = List.copyOf(brands);
+    }
+
+    private void updateCategoriesCache(List<Category> categories) {
+        this.categoriesCache = List.copyOf(categories);
     }
 
     @Override
@@ -199,5 +214,10 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     @Override
     public List<Brand> allBrands() {
         return brandsCache;
+    }
+
+    @Override
+    public List<Category> allCategories() {
+        return categoriesCache;
     }
 }
