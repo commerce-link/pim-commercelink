@@ -36,8 +36,8 @@ class CommerceLinkPimCatalogCategoriesTest {
         server.createContext("/PIM/Categories", exchange -> {
             String json = """
                     [
-                      {"id":"151","parentId":"150","namePl":"Notebooki/laptopy","nameEn":"Laptops"},
-                      {"id":"107","parentId":null,"namePl":"Telekomunikacja i nawigacja","nameEn":"Telecom & Navigation"}
+                      {"id":"151","parentId":"150","name":"Notebooki/laptopy","lang":"pl"},
+                      {"id":"107","parentId":null,"name":"Telekomunikacja i nawigacja","lang":"pl"}
                     ]
                     """;
             byte[] body = json.getBytes(StandardCharsets.UTF_8);
@@ -71,8 +71,8 @@ class CommerceLinkPimCatalogCategoriesTest {
         assertThat(categories).hasSize(2);
         PimCategory laptops = categories.stream().filter(c -> c.id().equals("151")).findFirst().orElseThrow();
         assertThat(laptops.parentId()).isEqualTo("150");
-        assertThat(laptops.namePl()).isEqualTo("Notebooki/laptopy");
-        assertThat(laptops.nameEn()).isEqualTo("Laptops");
+        assertThat(laptops.name()).isEqualTo("Notebooki/laptopy");
+        assertThat(laptops.lang()).isEqualTo("pl");
         PimCategory topLevel = categories.stream().filter(c -> c.id().equals("107")).findFirst().orElseThrow();
         assertThat(topLevel.topLevel()).isTrue();
     }
