@@ -54,7 +54,8 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
     public List<EventBinding<?>> bindings() {
         return List.of(
                 new QueueBinding<>("pim-entry-added-queue", PIMEntryAddedEvent.class),
-                new QueueBinding<>("pim-entry-deleted-queue", PIMEntryDeletedEvent.class)
+                new QueueBinding<>("pim-entry-deleted-queue", PIMEntryDeletedEvent.class),
+                new QueueBinding<>("pim-category-matched-queue", CategoryMatchedEvent.class)
         );
     }
 }
