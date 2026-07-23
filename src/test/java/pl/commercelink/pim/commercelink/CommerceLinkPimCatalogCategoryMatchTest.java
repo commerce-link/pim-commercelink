@@ -80,7 +80,7 @@ class CommerceLinkPimCatalogCategoryMatchTest {
         CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog("http://localhost:9", "", false);
         List<CategoryMatchedEvent> received = new ArrayList<>();
         catalog.onCategoryMatched(received::add);
-        CategoryMatchedEvent event = new CategoryMatchedEvent("e", "m", "CPU", null, null, null, "mock");
+        CategoryMatchedEvent event = new CategoryMatchedEvent("e", "m", "CPU", null, null, "mock");
 
         // when
         catalog.dispatch(event);
