@@ -35,7 +35,8 @@ class CommerceLinkPimCatalogIndexTest {
                         "subcategory": "Desktop",
                         "approved": true,
                         "netWeightInGrams": 120,
-                        "grossWeightInGrams": 250
+                        "grossWeightInGrams": 250,
+                        "categoryId": "989"
                       },
                       {
                         "pimId": "pim-tail",
@@ -89,5 +90,25 @@ class CommerceLinkPimCatalogIndexTest {
 
         PimEntry entry = catalog.findByMpn("MFN-LEASH-99").orElseThrow();
         assertThat(entry.category()).isEqualTo("Wireless Dog Leash");
+    }
+
+    @Test
+    void deserializesCategoryIdOverHttp() {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
+                "http://localhost:" + port, "", false);
+        catalog.refresh();
+
+        PimEntry entry = catalog.findByGtinOrMpn("5900000000001", "MFN-CLEAR-01").orElseThrow();
+        assertThat(entry.categoryId()).isEqualTo("989");
+    }
+
+    @Test
+    void leavesCategoryIdNullWhenAbsentFromPayload() {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
+                "http://localhost:" + port, "", false);
+        catalog.refresh();
+
+        PimEntry entry = catalog.findByMpn("MFN-LEASH-99").orElseThrow();
+        assertThat(entry.categoryId()).isNull();
     }
 }
