@@ -24,6 +24,7 @@ import static pl.commercelink.taxonomy.UnifiedProductIdentifiers.unifyMfn;
 public class CommerceLinkPimCatalog implements PimCatalog {
 
     private static final String SUBMIT_QUEUE_NAME = "pim-fetch-queue";
+    private static final String CATEGORY_MATCH_QUEUE_NAME = "pim-category-match-queue";
     private static final String INDEX_PATH = "/PIM/Index";
     private static final String BRANDS_PATH = "/PIM/Brands";
     private static final String CATEGORIES_PATH = "/PIM/Categories";
@@ -36,10 +37,12 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private final String pimCategoriesUrl;
     private final String apiKey;
     private final String submitQueueUrl;
+    private final String categoryMatchQueueUrl;
     private final boolean prod;
 
     private final List<Consumer<PIMEntryAddedEvent>> addedListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<PIMEntryDeletedEvent>> deletedListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<CategoryMatchedEvent>> categoryMatchedListeners = new CopyOnWriteArrayList<>();
 
     private Map<String, PimEntry> pimIdCache = new ConcurrentHashMap<>();
     private Map<String, PimEntry> gtinCache = new ConcurrentHashMap<>();
@@ -62,6 +65,9 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         this.apiKey = apiKey;
         this.submitQueueUrl = sqsAsyncClient != null
                 ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(SUBMIT_QUEUE_NAME).build()).join().queueUrl()
+                : null;
+        this.categoryMatchQueueUrl = sqsAsyncClient != null
+                ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(CATEGORY_MATCH_QUEUE_NAME).build()).join().queueUrl()
                 : null;
         this.prod = prod;
     }
@@ -192,6 +198,22 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     }
 
     @Override
+    public void submitCategoryMatch(CategoryMatchRequest request) {
+        if (sqsAsyncClient == null) {
+            throw new IllegalStateException("Cannot submit category match request: SQS client not configured");
+        }
+        try {
+            String body = objectMapper.writeValueAsString(request);
+            sqsAsyncClient.sendMessage(SendMessageRequest.builder()
+                    .queueUrl(categoryMatchQueueUrl)
+                    .messageBody(body)
+                    .build()).join();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to submit category match request", e);
+        }
+    }
+
+    @Override
     public void onEntryAdded(Consumer<PIMEntryAddedEvent> listener) {
         addedListeners.add(listener);
     }
@@ -202,10 +224,16 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     }
 
     @Override
+    public void onCategoryMatched(Consumer<CategoryMatchedEvent> listener) {
+        categoryMatchedListeners.add(listener);
+    }
+
+    @Override
     public void dispatch(Object event) {
         switch (event) {
             case PIMEntryAddedEvent e -> addedListeners.forEach(l -> l.accept(e));
             case PIMEntryDeletedEvent e -> deletedListeners.forEach(l -> l.accept(e));
+            case CategoryMatchedEvent e -> categoryMatchedListeners.forEach(l -> l.accept(e));
             default -> {}
         }
     }
