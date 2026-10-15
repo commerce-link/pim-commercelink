@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.commercelink.pim.api.*;
 import pl.commercelink.pim.api.Brand;
+import pl.commercelink.taxonomy.UnifiedProductIdentifiers;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
@@ -14,18 +15,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
-import static pl.commercelink.taxonomy.UnifiedProductIdentifiers.unifyEan;
-import static pl.commercelink.taxonomy.UnifiedProductIdentifiers.unifyMfn;
 
 public class CommerceLinkPimCatalog implements PimCatalog {
 
     private static final String SUBMIT_QUEUE_NAME = "pim-fetch-queue";
     private static final String CATEGORY_MATCH_QUEUE_NAME = "pim-category-match-queue";
-    private static final String INDEX_PATH = "/PIM/Index";
+    private static final String INDEX_PATH = "/PIM/Index?scope=all";
     private static final String BRANDS_PATH = "/PIM/Brands";
     private static final String CATEGORIES_PATH = "/PIM/Categories";
 
@@ -44,9 +42,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private final List<Consumer<PIMEntryDeletedEvent>> deletedListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<CategoryMatchedEvent>> categoryMatchedListeners = new CopyOnWriteArrayList<>();
 
-    private Map<String, PimEntry> pimIdCache = new ConcurrentHashMap<>();
-    private Map<String, PimEntry> gtinCache = new ConcurrentHashMap<>();
-    private Map<String, PimEntry> mpnCache = new ConcurrentHashMap<>();
+    private volatile PimEntryIndex index = PimEntryIndex.empty();
     private volatile List<Brand> brandsCache = List.of();
     private volatile List<PimCategory> categoriesCache = List.of();
 
@@ -116,24 +112,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     }
 
     private void updateIndexCaches(List<PimEntry> entries) {
-        Map<String, PimEntry> newPimIdCache = new ConcurrentHashMap<>();
-        Map<String, PimEntry> newGtinCache = new ConcurrentHashMap<>();
-        Map<String, PimEntry> newMpnCache = new ConcurrentHashMap<>();
-        for (PimEntry entry : entries) {
-            newPimIdCache.put(entry.pimId(), entry);
-            entry.identifiers().forEach(id -> {
-                if (id.type() == PimIdentifierType.GTIN) {
-                    newGtinCache.put(id.value(), entry);
-                } else if (id.type() == PimIdentifierType.MPN) {
-                    newMpnCache.put(id.value(), entry);
-                }
-            });
-        }
-        synchronized (this) {
-            this.pimIdCache = newPimIdCache;
-            this.gtinCache = newGtinCache;
-            this.mpnCache = newMpnCache;
-        }
+        this.index = new PimEntryIndex(entries, UnifiedProductIdentifiers::unifyEan, UnifiedProductIdentifiers::unifyMfn);
     }
 
     private void updateBrandsCache(List<Brand> brands) {
@@ -146,39 +125,33 @@ public class CommerceLinkPimCatalog implements PimCatalog {
 
     @Override
     public List<PimEntry> findAll() {
-        return new ArrayList<>(pimIdCache.values());
+        return index.global().findAll();
     }
 
     @Override
     public Optional<PimEntry> findByPimId(String pimId) {
-        return Optional.ofNullable(pimIdCache.get(pimId));
+        return index.global().findByPimId(pimId);
     }
 
     @Override
     public Optional<PimEntry> findByGtin(String gtin) {
-        String unified = unifyEan(gtin);
-        if (unified == null || unified.isBlank()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(gtinCache.get(unified));
+        return index.global().findByGtin(gtin);
     }
 
     @Override
     public Optional<PimEntry> findByMpn(String mpn) {
-        String unified = unifyMfn(mpn);
-        if (unified == null || unified.isBlank()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(mpnCache.get(unified));
+        return index.global().findByMpn(mpn);
     }
 
     @Override
     public Optional<PimEntry> findByGtinOrMpn(String gtin, String mpn) {
-        Optional<PimEntry> entry = findByGtin(gtin);
-        if (entry.isEmpty()) {
-            entry = findByMpn(mpn);
-        }
-        return entry;
+        return index.global().findByGtinOrMpn(gtin, mpn);
+    }
+
+    @Override
+    public PimLookup forStore(String storeId) {
+        // a snapshot of the current index: callers use it within one request
+        return index.forStore(storeId);
     }
 
     @Override
