@@ -34,6 +34,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private final String pimBrandsUrl;
     private final String pimCategoriesUrl;
     private final String apiKey;
+    private final String scopeKey;
     private final String submitQueueUrl;
     private final String categoryMatchQueueUrl;
     private final boolean prod;
@@ -47,10 +48,18 @@ public class CommerceLinkPimCatalog implements PimCatalog {
     private volatile List<PimCategory> categoriesCache = List.of();
 
     public CommerceLinkPimCatalog(String pimBaseUrl, String apiKey, boolean prod) {
-        this(null, pimBaseUrl, apiKey, prod);
+        this((SqsAsyncClient) null, pimBaseUrl, apiKey, "", prod);
+    }
+
+    public CommerceLinkPimCatalog(String pimBaseUrl, String apiKey, String scopeKey, boolean prod) {
+        this(null, pimBaseUrl, apiKey, scopeKey, prod);
     }
 
     public CommerceLinkPimCatalog(SqsAsyncClient sqsAsyncClient, String pimBaseUrl, String apiKey, boolean prod) {
+        this(sqsAsyncClient, pimBaseUrl, apiKey, "", prod);
+    }
+
+    public CommerceLinkPimCatalog(SqsAsyncClient sqsAsyncClient, String pimBaseUrl, String apiKey, String scopeKey, boolean prod) {
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -59,6 +68,7 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         this.pimBrandsUrl = pimBaseUrl + BRANDS_PATH;
         this.pimCategoriesUrl = pimBaseUrl + CATEGORIES_PATH;
         this.apiKey = apiKey;
+        this.scopeKey = scopeKey;
         this.submitQueueUrl = sqsAsyncClient != null
                 ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(SUBMIT_QUEUE_NAME).build()).join().queueUrl()
                 : null;
@@ -70,32 +80,35 @@ public class CommerceLinkPimCatalog implements PimCatalog {
 
     @Override
     public void refresh() {
-        List<PimEntry> entries = fetchJsonList(pimIndexUrl, new TypeReference<>() {}, "PIM index");
+        List<PimEntry> entries = fetchJsonList(pimIndexUrl, new TypeReference<>() {}, "PIM index", scopeKey);
         System.out.println("Loaded " + entries.size() + " PIM entries into cache from " + pimIndexUrl);
         if (!entries.isEmpty()) {
             updateIndexCaches(entries);
         }
 
-        List<Brand> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache");
+        List<Brand> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache", null);
         if (!brands.isEmpty()) {
             updateBrandsCache(brands);
             System.out.println("Loaded " + brands.size() + " brand mappings from " + pimBrandsUrl);
         }
 
-        List<PimCategory> categories = fetchJsonList(pimCategoriesUrl, new TypeReference<>() {}, "category cache");
+        List<PimCategory> categories = fetchJsonList(pimCategoriesUrl, new TypeReference<>() {}, "category cache", null);
         if (!categories.isEmpty()) {
             updateCategoriesCache(categories);
             System.out.println("Loaded " + categories.size() + " categories from " + pimCategoriesUrl);
         }
     }
 
-    private <T> List<T> fetchJsonList(String url, TypeReference<List<T>> type, String errorContext) {
+    private <T> List<T> fetchJsonList(String url, TypeReference<List<T>> type, String errorContext, String scopeKeyHeader) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .GET();
             if (apiKey != null && !apiKey.isBlank()) {
                 builder.header("x-api-key", apiKey);
+            }
+            if (scopeKeyHeader != null && !scopeKeyHeader.isBlank()) {
+                builder.header("x-pim-scope-key", scopeKeyHeader);
             }
             HttpResponse<String> response = httpClient.send(builder.build(),
                     HttpResponse.BodyHandlers.ofString());

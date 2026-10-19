@@ -26,6 +26,7 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
         return List.of(
                 new ProviderField("apiDomain", "API Domain", ProviderField.FieldType.URL, true, "https://api.example.com"),
                 new ProviderField("apiKey", "API Key", ProviderField.FieldType.PASSWORD, false, ""),
+                new ProviderField("scopeKey", "Index scope key", ProviderField.FieldType.PASSWORD, false, ""),
                 new ProviderField("env", "Environment", ProviderField.FieldType.TEXT, true, "prod")
         );
     }
@@ -35,6 +36,7 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
         return new CommerceLinkPimCatalog(
                 configuration.getOrDefault("apiDomain", ""),
                 configuration.getOrDefault("apiKey", ""),
+                configuration.getOrDefault("scopeKey", ""),
                 "prod".equals(configuration.getOrDefault("env", "localhost"))
         );
     }
@@ -46,6 +48,7 @@ public class CommerceLinkPimDescriptor implements PimCatalogDescriptor {
                 sqsAsyncClient,
                 configuration.getOrDefault("apiDomain", ""),
                 configuration.getOrDefault("apiKey", ""),
+                configuration.getOrDefault("scopeKey", ""),
                 "prod".equals(configuration.getOrDefault("env", "localhost"))
         );
     }
