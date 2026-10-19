@@ -48,6 +48,9 @@ class CommerceLinkPimCatalogScopeTest {
     }
 
     private CommerceLinkPimCatalog startServer(String payload, String scopeKey) throws Exception {
+        if (server != null) {
+            server.stop(0); // a test that starts a second server must not leak the first
+        }
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/PIM/Index", exchange -> {
             seenPath.set(exchange.getRequestURI().getPath());

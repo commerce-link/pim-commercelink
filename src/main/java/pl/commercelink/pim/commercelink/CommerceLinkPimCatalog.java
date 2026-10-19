@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.commercelink.pim.api.*;
 import pl.commercelink.pim.api.Brand;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import pl.commercelink.taxonomy.UnifiedProductIdentifiers;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
@@ -20,6 +22,8 @@ import java.util.function.Consumer;
 
 
 public class CommerceLinkPimCatalog implements PimCatalog {
+
+    private static final Logger log = LoggerFactory.getLogger(CommerceLinkPimCatalog.class);
 
     private static final String SUBMIT_QUEUE_NAME = "pim-fetch-queue";
     private static final String CATEGORY_MATCH_QUEUE_NAME = "pim-category-match-queue";
@@ -68,7 +72,8 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         this.pimBrandsUrl = pimBaseUrl + BRANDS_PATH;
         this.pimCategoriesUrl = pimBaseUrl + CATEGORIES_PATH;
         this.apiKey = apiKey;
-        this.scopeKey = scopeKey;
+        // stripped once: a stray space or newline in the secret must not turn every index refresh into a 403
+        this.scopeKey = scopeKey == null ? "" : scopeKey.strip();
         this.submitQueueUrl = sqsAsyncClient != null
                 ? sqsAsyncClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(SUBMIT_QUEUE_NAME).build()).join().queueUrl()
                 : null;
@@ -80,26 +85,34 @@ public class CommerceLinkPimCatalog implements PimCatalog {
 
     @Override
     public void refresh() {
-        List<PimEntry> entries = fetchJsonList(pimIndexUrl, new TypeReference<>() {}, "PIM index", scopeKey);
+        List<PimEntry> entries = fetchJsonList(pimIndexUrl, new TypeReference<>() {}, "PIM index", scopeKey, true);
         System.out.println("Loaded " + entries.size() + " PIM entries into cache from " + pimIndexUrl);
         if (!entries.isEmpty()) {
             updateIndexCaches(entries);
         }
 
-        List<Brand> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache", null);
+        List<Brand> brands = fetchJsonList(pimBrandsUrl, new TypeReference<>() {}, "brand cache", null, false);
         if (!brands.isEmpty()) {
             updateBrandsCache(brands);
             System.out.println("Loaded " + brands.size() + " brand mappings from " + pimBrandsUrl);
         }
 
-        List<PimCategory> categories = fetchJsonList(pimCategoriesUrl, new TypeReference<>() {}, "category cache", null);
+        List<PimCategory> categories = fetchJsonList(pimCategoriesUrl, new TypeReference<>() {}, "category cache", null, false);
         if (!categories.isEmpty()) {
             updateCategoriesCache(categories);
             System.out.println("Loaded " + categories.size() + " categories from " + pimCategoriesUrl);
         }
     }
 
-    private <T> List<T> fetchJsonList(String url, TypeReference<List<T>> type, String errorContext, String scopeKeyHeader) {
+    /**
+     * Fetches one list from PIM. A connection or parsing failure throws in prod and gives an empty list elsewhere.
+     * A non-200 answer is always logged with its status and path; in prod it throws for the index only (a wrong
+     * scope key gives 403, and an app booting on an empty catalog must fail its health check instead), while
+     * brands and categories stay lenient.
+     */
+    private <T> List<T> fetchJsonList(String url, TypeReference<List<T>> type, String errorContext,
+                                      String scopeKeyHeader, boolean required) {
+        HttpResponse<String> response;
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -110,18 +123,33 @@ public class CommerceLinkPimCatalog implements PimCatalog {
             if (scopeKeyHeader != null && !scopeKeyHeader.isBlank()) {
                 builder.header("x-pim-scope-key", scopeKeyHeader);
             }
-            HttpResponse<String> response = httpClient.send(builder.build(),
-                    HttpResponse.BodyHandlers.ofString());
+            response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return objectMapper.readValue(response.body(), type);
             }
-            return List.of();
         } catch (Exception e) {
             if (prod) {
                 throw new RuntimeException("Failed to refresh " + errorContext + " from " + url, e);
             }
             return List.of();
         }
+
+        String path = pathOf(url);
+        String message = "PIM answered " + response.statusCode() + " to the " + errorContext + " request " + path;
+        if (required) {
+            log.error(message);
+            if (prod) {
+                throw new IllegalStateException(message);
+            }
+        } else {
+            log.warn(message);
+        }
+        return List.of();
+    }
+
+    private static String pathOf(String url) {
+        URI uri = URI.create(url);
+        return uri.getRawQuery() == null ? uri.getRawPath() : uri.getRawPath() + "?" + uri.getRawQuery();
     }
 
     private void updateIndexCaches(List<PimEntry> entries) {
