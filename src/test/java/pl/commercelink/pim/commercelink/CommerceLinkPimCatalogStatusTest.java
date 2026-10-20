@@ -5,6 +5,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import pl.commercelink.pim.api.PimEntry;
 
 import java.io.ByteArrayOutputStream;
@@ -12,6 +14,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,6 +29,7 @@ class CommerceLinkPimCatalogStatusTest {
             """;
 
     private HttpServer server;
+    private final AtomicInteger liveIndexStatus = new AtomicInteger(200);
     private final AtomicReference<String> indexScopeHeader = new AtomicReference<>();
     private final ByteArrayOutputStream log = new ByteArrayOutputStream();
     private PrintStream originalErr;
@@ -103,5 +107,51 @@ class CommerceLinkPimCatalogStatusTest {
 
         assertThat(catalog.findAll()).extracting(PimEntry::pimId).containsExactly("g1");
         assertThat(logged()).contains("500").contains("/PIM/Brands");
+    }
+
+    // the index status can be switched between refreshes to simulate PIM failing after a good load
+    private String startSwitchableServer() throws IOException {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/PIM/Index", exchange -> {
+            int status = liveIndexStatus.get();
+            respond(exchange, status, status == 200 ? INDEX : "{\"status\":" + status + "}");
+        });
+        server.createContext("/PIM/Brands", exchange -> respond(exchange, 200, "[]"));
+        server.createContext("/PIM/Categories", exchange -> respond(exchange, 200, "[]"));
+        server.start();
+        return "http://localhost:" + server.getAddress().getPort();
+    }
+
+    private void assertLoadedIndexSurvives(CommerceLinkPimCatalog catalog) {
+        assertThat(catalog.findByPimId("g1")).isPresent();
+        assertThat(catalog.forStore("s1").findByPimId("g1")).isPresent();
+        assertThat(catalog.findAll()).extracting(PimEntry::pimId).containsExactly("g1");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {403, 503})
+    void refusedRefreshKeepsLoadedIndexInProd(int status) throws Exception {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(startSwitchableServer(), "", "k", true);
+        catalog.refresh();
+        assertLoadedIndexSurvives(catalog);
+
+        liveIndexStatus.set(status);
+
+        assertThatThrownBy(catalog::refresh).hasMessageContaining(String.valueOf(status));
+        assertLoadedIndexSurvives(catalog);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {403, 503})
+    void refusedRefreshKeepsLoadedIndexOutsideProd(int status) throws Exception {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(startSwitchableServer(), "", "k", false);
+        catalog.refresh();
+        assertLoadedIndexSurvives(catalog);
+
+        liveIndexStatus.set(status);
+        catalog.refresh();
+
+        assertLoadedIndexSurvives(catalog);
+        assertThat(logged()).contains(String.valueOf(status)).contains("/PIM/Index?scope=all");
     }
 }
