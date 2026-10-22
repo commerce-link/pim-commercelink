@@ -36,7 +36,7 @@ PimCatalog catalog = descriptor.create(
 );
 
 catalog.refresh();
-catalog.findByGtin("5901234123457");
+catalog.withGlobalData().findByGtin("5901234123457");
 ```
 
 Event bindings are declared by the descriptor and can be set up by the hosting application:
