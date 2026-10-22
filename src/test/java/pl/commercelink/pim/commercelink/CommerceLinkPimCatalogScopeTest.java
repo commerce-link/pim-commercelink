@@ -35,18 +35,42 @@ class CommerceLinkPimCatalogScopeTest {
     private final AtomicReference<String> seenPath = new AtomicReference<>();
     private final AtomicReference<String> seenQuery = new AtomicReference<>();
 
+    private final AtomicReference<String> indexScopeHeader = new AtomicReference<>();
+    private final AtomicReference<String> brandsScopeHeader = new AtomicReference<>();
+    private final AtomicReference<String> categoriesScopeHeader = new AtomicReference<>();
+
     private CommerceLinkPimCatalog catalogServing(String payload) throws Exception {
+        return startServer(payload, null);
+    }
+
+    private CommerceLinkPimCatalog catalogServing(String payload, String scopeKey) throws Exception {
+        return startServer(payload, scopeKey);
+    }
+
+    private CommerceLinkPimCatalog startServer(String payload, String scopeKey) throws Exception {
+        if (server != null) {
+            server.stop(0); // a test that starts a second server must not leak the first
+        }
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/PIM/Index", exchange -> {
             seenPath.set(exchange.getRequestURI().getPath());
             seenQuery.set(exchange.getRequestURI().getQuery());
+            indexScopeHeader.set(exchange.getRequestHeaders().getFirst("x-pim-scope-key"));
             respond(exchange, payload);
         });
-        server.createContext("/PIM/Brands", exchange -> respond(exchange, "[]"));
-        server.createContext("/PIM/Categories", exchange -> respond(exchange, "[]"));
+        server.createContext("/PIM/Brands", exchange -> {
+            brandsScopeHeader.set(exchange.getRequestHeaders().getFirst("x-pim-scope-key"));
+            respond(exchange, "[]");
+        });
+        server.createContext("/PIM/Categories", exchange -> {
+            categoriesScopeHeader.set(exchange.getRequestHeaders().getFirst("x-pim-scope-key"));
+            respond(exchange, "[]");
+        });
         server.start();
-        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
-                "http://localhost:" + server.getAddress().getPort(), "", false);
+        String baseUrl = "http://localhost:" + server.getAddress().getPort();
+        CommerceLinkPimCatalog catalog = scopeKey == null
+                ? new CommerceLinkPimCatalog(baseUrl, "", false)
+                : new CommerceLinkPimCatalog(baseUrl, "", scopeKey, false);
         catalog.refresh();
         return catalog;
     }
@@ -111,5 +135,48 @@ class CommerceLinkPimCatalogScopeTest {
         assertThat(catalog.withGlobalData().findByGtin("0005901234567890")).map(PimEntry::pimId).contains("n1");
         assertThat(catalog.withGlobalData().findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
         assertThat(catalog.withStoreData("s1").findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
+    }
+
+    @Test
+    void indexRequestCarriesTheScopeKey() throws Exception {
+        catalogServing(OWNED_PAYLOAD, "k");
+
+        assertThat(seenQuery.get()).isEqualTo("scope=all");
+        assertThat(indexScopeHeader.get()).isEqualTo("k");
+    }
+
+    @Test
+    void brandsAndCategoriesDoNotCarryTheScopeKey() throws Exception {
+        catalogServing(OWNED_PAYLOAD, "k");
+
+        assertThat(brandsScopeHeader.get()).isNull();
+        assertThat(categoriesScopeHeader.get()).isNull();
+    }
+
+    @Test
+    void blankScopeKeySendsNoHeader() throws Exception {
+        catalogServing(OWNED_PAYLOAD, "  ");
+        assertThat(indexScopeHeader.get()).isNull();
+
+        catalogServing(OWNED_PAYLOAD);
+        assertThat(indexScopeHeader.get()).isNull();
+    }
+
+    @Test
+    void descriptorPassesTheScopeKeyFromTheSecret() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/PIM/Index", exchange -> {
+            indexScopeHeader.set(exchange.getRequestHeaders().getFirst("x-pim-scope-key"));
+            respond(exchange, OWNED_PAYLOAD);
+        });
+        server.createContext("/PIM/Brands", exchange -> respond(exchange, "[]"));
+        server.createContext("/PIM/Categories", exchange -> respond(exchange, "[]"));
+        server.start();
+
+        new CommerceLinkPimDescriptor().create(java.util.Map.of(
+                "apiDomain", "http://localhost:" + server.getAddress().getPort(),
+                "scopeKey", "k")).refresh();
+
+        assertThat(indexScopeHeader.get()).isEqualTo("k");
     }
 }
