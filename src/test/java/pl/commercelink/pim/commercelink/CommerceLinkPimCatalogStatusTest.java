@@ -84,7 +84,7 @@ class CommerceLinkPimCatalogStatusTest {
 
         catalog.refresh();
 
-        assertThat(catalog.findAll()).isEmpty();
+        assertThat(catalog.withGlobalData().findAll()).isEmpty();
         assertThat(logged()).contains("403").contains("/PIM/Index?scope=all");
     }
 
@@ -105,7 +105,7 @@ class CommerceLinkPimCatalogStatusTest {
 
         catalog.refresh();
 
-        assertThat(catalog.findAll()).extracting(PimEntry::pimId).containsExactly("g1");
+        assertThat(catalog.withGlobalData().findAll()).extracting(PimEntry::pimId).containsExactly("g1");
         assertThat(logged()).contains("500").contains("/PIM/Brands");
     }
 
@@ -123,9 +123,9 @@ class CommerceLinkPimCatalogStatusTest {
     }
 
     private void assertLoadedIndexSurvives(CommerceLinkPimCatalog catalog) {
-        assertThat(catalog.findByPimId("g1")).isPresent();
-        assertThat(catalog.forStore("s1").findByPimId("g1")).isPresent();
-        assertThat(catalog.findAll()).extracting(PimEntry::pimId).containsExactly("g1");
+        assertThat(catalog.withGlobalData().findByPimId("g1")).isPresent();
+        assertThat(catalog.withStoreData("s1").findByPimId("g1")).isPresent();
+        assertThat(catalog.withGlobalData().findAll()).extracting(PimEntry::pimId).containsExactly("g1");
     }
 
     @ParameterizedTest
