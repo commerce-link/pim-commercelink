@@ -77,26 +77,26 @@ class CommerceLinkPimCatalogScopeTest {
     void catalogLookupsSeeOnlyGlobalEntries() throws Exception {
         CommerceLinkPimCatalog catalog = catalogServing(OWNED_PAYLOAD);
 
-        assertThat(catalog.findByGtin("590")).map(PimEntry::pimId).contains("g1");
-        assertThat(catalog.findByGtin("591")).isEmpty();
-        assertThat(catalog.findAll()).extracting(PimEntry::pimId).containsExactly("g1");
+        assertThat(catalog.withGlobalData().findByGtin("590")).map(PimEntry::pimId).contains("g1");
+        assertThat(catalog.withGlobalData().findByGtin("591")).isEmpty();
+        assertThat(catalog.withGlobalData().findAll()).extracting(PimEntry::pimId).containsExactly("g1");
     }
 
     @Test
     void storeViewPrefersTheStoresOwnEntry() throws Exception {
         CommerceLinkPimCatalog catalog = catalogServing(OWNED_PAYLOAD);
 
-        assertThat(catalog.forStore("s1").findByGtin("590")).map(PimEntry::pimId).contains("s1-1");
-        assertThat(catalog.forStore("s2").findByGtin("590")).map(PimEntry::pimId).contains("g1");
-        assertThat(catalog.forStore("s2").findByPimId("s1-2")).isEmpty();
+        assertThat(catalog.withStoreData("s1").findByGtin("590")).map(PimEntry::pimId).contains("s1-1");
+        assertThat(catalog.withStoreData("s2").findByGtin("590")).map(PimEntry::pimId).contains("g1");
+        assertThat(catalog.withStoreData("s2").findByPimId("s1-2")).isEmpty();
     }
 
     @Test
     void indexOfAnOldPimWithoutOwnersIsAllGlobal() throws Exception {
         CommerceLinkPimCatalog catalog = catalogServing(OLD_PAYLOAD);
 
-        assertThat(catalog.findByGtin("590")).isPresent();
-        assertThat(catalog.forStore("s1").findByGtin("590")).isPresent();
+        assertThat(catalog.withGlobalData().findByGtin("590")).isPresent();
+        assertThat(catalog.withStoreData("s1").findByGtin("590")).isPresent();
     }
 
     @Test
@@ -108,8 +108,8 @@ class CommerceLinkPimCatalogScopeTest {
                   "brand": "B", "name": "N", "approved": true}]
                 """);
 
-        assertThat(catalog.findByGtin("0005901234567890")).map(PimEntry::pimId).contains("n1");
-        assertThat(catalog.findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
-        assertThat(catalog.forStore("s1").findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
+        assertThat(catalog.withGlobalData().findByGtin("0005901234567890")).map(PimEntry::pimId).contains("n1");
+        assertThat(catalog.withGlobalData().findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
+        assertThat(catalog.withStoreData("s1").findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
     }
 }

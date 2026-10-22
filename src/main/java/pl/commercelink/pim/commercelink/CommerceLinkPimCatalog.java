@@ -123,34 +123,14 @@ public class CommerceLinkPimCatalog implements PimCatalog {
         this.categoriesCache = List.copyOf(categories);
     }
 
+    // both views are snapshots of the current index: callers take one per operation
     @Override
-    public List<PimEntry> findAll() {
-        return index.global().findAll();
+    public PimView withGlobalData() {
+        return index.global();
     }
 
     @Override
-    public Optional<PimEntry> findByPimId(String pimId) {
-        return index.global().findByPimId(pimId);
-    }
-
-    @Override
-    public Optional<PimEntry> findByGtin(String gtin) {
-        return index.global().findByGtin(gtin);
-    }
-
-    @Override
-    public Optional<PimEntry> findByMpn(String mpn) {
-        return index.global().findByMpn(mpn);
-    }
-
-    @Override
-    public Optional<PimEntry> findByGtinOrMpn(String gtin, String mpn) {
-        return index.global().findByGtinOrMpn(gtin, mpn);
-    }
-
-    @Override
-    public PimLookup forStore(String storeId) {
-        // a snapshot of the current index: callers use it within one request
+    public PimView withStoreData(String storeId) {
         return index.forStore(storeId);
     }
 
