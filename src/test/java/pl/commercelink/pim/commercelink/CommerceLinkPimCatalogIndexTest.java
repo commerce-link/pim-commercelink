@@ -50,6 +50,18 @@ class CommerceLinkPimCatalogIndexTest {
                         "approved": true,
                         "netWeightInGrams": 80,
                         "grossWeightInGrams": 100
+                      },
+                      {
+                        "pimId": "store-clone",
+                        "identifiers": [
+                          {"value": "5900000000001", "type": "GTIN"}
+                        ],
+                        "brand": "AMD",
+                        "name": "AMD ClearEdge Pro X3D (klon)",
+                        "category": "CPU",
+                        "approved": true,
+                        "ownerStoreId": "s1",
+                        "clonedFromPimId": "pim-cpu"
                       }
                     ]
                     """;
@@ -110,5 +122,25 @@ class CommerceLinkPimCatalogIndexTest {
 
         PimEntry entry = catalog.withGlobalData().findByMpn("MFN-LEASH-99").orElseThrow();
         assertThat(entry.categoryId()).isNull();
+    }
+
+    @Test
+    void deserializesClonedFromPimIdOverHttp() {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
+                "http://localhost:" + port, "", false);
+        catalog.refresh();
+
+        PimEntry entry = catalog.withStoreData("s1").findByPimId("store-clone").orElseThrow();
+        assertThat(entry.clonedFromPimId()).isEqualTo("pim-cpu");
+    }
+
+    @Test
+    void leavesClonedFromPimIdNullWhenAbsentFromPayload() {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
+                "http://localhost:" + port, "", false);
+        catalog.refresh();
+
+        PimEntry entry = catalog.withGlobalData().findByMpn("MFN-LEASH-99").orElseThrow();
+        assertThat(entry.clonedFromPimId()).isNull();
     }
 }
