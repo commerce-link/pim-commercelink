@@ -179,4 +179,21 @@ class CommerceLinkPimCatalogScopeTest {
 
         assertThat(indexScopeHeader.get()).isEqualTo("k");
     }
+
+    @Test
+    void storeViewFindsTheCloneAfterRefresh() throws Exception {
+        CommerceLinkPimCatalog catalog = catalogServing("""
+                [
+                  {"pimId": "g1", "identifiers": [{"value": "590", "type": "GTIN", "primary": true}],
+                   "brand": "B", "name": "Global", "approved": true},
+                  {"pimId": "c1", "identifiers": [{"value": "590", "type": "GTIN", "primary": true}],
+                   "brand": "B", "name": "Global (klon)", "approved": true,
+                   "ownerStoreId": "s1", "clonedFromPimId": "g1"}
+                ]
+                """);
+
+        assertThat(catalog.withStoreData("s1").findCloneOf("g1")).map(PimEntry::pimId).contains("c1");
+        assertThat(catalog.withStoreData("s2").findCloneOf("g1")).isEmpty();
+        assertThat(catalog.withGlobalData().findCloneOf("g1")).isEmpty();
+    }
 }
