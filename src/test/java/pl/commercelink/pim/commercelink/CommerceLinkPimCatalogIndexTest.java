@@ -90,7 +90,7 @@ class CommerceLinkPimCatalogIndexTest {
                 "http://localhost:" + port, "", false);
         catalog.refresh();
 
-        PimEntry entry = catalog.withGlobalData().findByGtinOrMpn("5900000000001", "MFN-CLEAR-01").orElseThrow();
+        PimEntry entry = catalog.withGlobalData().findByGtin("5900000000001").orElseThrow();
         assertThat(entry.category()).isEqualTo("CPU");
     }
 
@@ -100,7 +100,7 @@ class CommerceLinkPimCatalogIndexTest {
                 "http://localhost:" + port, "", false);
         catalog.refresh();
 
-        PimEntry entry = catalog.withGlobalData().findByMpn("MFN-LEASH-99").orElseThrow();
+        PimEntry entry = catalog.withGlobalData().findByMpnAndBrand("MFN-LEASH-99", "Acme").orElseThrow();
         assertThat(entry.category()).isEqualTo("Wireless Dog Leash");
     }
 
@@ -110,7 +110,7 @@ class CommerceLinkPimCatalogIndexTest {
                 "http://localhost:" + port, "", false);
         catalog.refresh();
 
-        PimEntry entry = catalog.withGlobalData().findByGtinOrMpn("5900000000001", "MFN-CLEAR-01").orElseThrow();
+        PimEntry entry = catalog.withGlobalData().findByGtin("5900000000001").orElseThrow();
         assertThat(entry.categoryId()).isEqualTo("989");
     }
 
@@ -120,7 +120,7 @@ class CommerceLinkPimCatalogIndexTest {
                 "http://localhost:" + port, "", false);
         catalog.refresh();
 
-        PimEntry entry = catalog.withGlobalData().findByMpn("MFN-LEASH-99").orElseThrow();
+        PimEntry entry = catalog.withGlobalData().findByMpnAndBrand("MFN-LEASH-99", "Acme").orElseThrow();
         assertThat(entry.categoryId()).isNull();
     }
 
@@ -140,7 +140,7 @@ class CommerceLinkPimCatalogIndexTest {
                 "http://localhost:" + port, "", false);
         catalog.refresh();
 
-        PimEntry entry = catalog.withGlobalData().findByMpn("MFN-LEASH-99").orElseThrow();
+        PimEntry entry = catalog.withGlobalData().findByMpnAndBrand("MFN-LEASH-99", "Acme").orElseThrow();
         assertThat(entry.clonedFromPimId()).isNull();
     }
 }

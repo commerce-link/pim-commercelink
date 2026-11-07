@@ -133,8 +133,8 @@ class CommerceLinkPimCatalogScopeTest {
                 """);
 
         assertThat(catalog.withGlobalData().findByGtin("0005901234567890")).map(PimEntry::pimId).contains("n1");
-        assertThat(catalog.withGlobalData().findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
-        assertThat(catalog.withStoreData("s1").findByMpn(" mfn-norm-1 ")).map(PimEntry::pimId).contains("n1");
+        assertThat(catalog.withGlobalData().findByMpnAndBrand(" mfn-norm-1 ", "B")).map(PimEntry::pimId).contains("n1");
+        assertThat(catalog.withStoreData("s1").findByMpnAndBrand(" mfn-norm-1 ", "B")).map(PimEntry::pimId).contains("n1");
     }
 
     @Test
