@@ -36,7 +36,8 @@ class CommerceLinkPimCatalogIndexTest {
                         "approved": true,
                         "netWeightInGrams": 120,
                         "grossWeightInGrams": 250,
-                        "categoryId": "989"
+                        "categoryId": "989",
+                        "eanOnlyMatching": true
                       },
                       {
                         "pimId": "pim-tail",
@@ -142,5 +143,17 @@ class CommerceLinkPimCatalogIndexTest {
 
         PimEntry entry = catalog.withGlobalData().findByMpnAndBrand("MFN-LEASH-99", "Acme").orElseThrow();
         assertThat(entry.clonedFromPimId()).isNull();
+    }
+
+    @Test
+    void indexEntryCarriesEanOnlyMatching() {
+        CommerceLinkPimCatalog catalog = new CommerceLinkPimCatalog(
+                "http://localhost:" + port, "", false);
+        catalog.refresh();
+
+        PimEntry flagged = catalog.withGlobalData().findByGtin("5900000000001").orElseThrow();
+        PimEntry withoutField = catalog.withGlobalData().findByMpnAndBrand("MFN-LEASH-99", "Acme").orElseThrow();
+        assertThat(flagged.eanOnlyMatching()).isTrue();
+        assertThat(withoutField.eanOnlyMatching()).isFalse();
     }
 }
